@@ -1,0 +1,31 @@
+name: sim
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  node-sim:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Physics sim suite (seeded, headless)
+        run: node tests/sim.test.js
+
+  chromium-playtest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install playwright + chromium
+        run: |
+          pip install playwright
+          python -m playwright install --with-deps chromium
+      - name: Real-browser playtest (all modes + sliders)
+        run: python3 playtest.py

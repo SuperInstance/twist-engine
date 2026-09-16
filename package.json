@@ -1,0 +1,12 @@
+{
+  "name": "twist-engine",
+  "version": "1.1.0",
+  "description": "four physics substrates, one twist law: layers + deliberate offset -> interference -> emergence",
+  "license": "MIT",
+  "private": true,
+  "scripts": {
+    "test": "node tests/sim.test.js",
+    "test:explore": "node tests/sim.test.js --explore",
+    "playtest": "python3 playtest.py"
+  }
+}

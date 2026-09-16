@@ -99,6 +99,8 @@ const twist = {
   doctrine: "no new atoms — <em>a new angle</em>. the property is in the twist.",
   title: "TWIST", sub: "two lattices, one deliberate misalignment",
 
+  resize() { this.init(); },
+
   hex(s, R) {
     const pts = [], dy = s * Math.sin(Math.PI / 3);
     const nj = Math.ceil(R / dy) + 1, ni = Math.ceil(R / s) + 1;
@@ -113,18 +115,20 @@ const twist = {
   },
   hash(pts, eps) {
     const m = new Map();
+    const OFF = 1 << 20; // integer keys: much faster than string concat at this scale
     for (const p of pts) {
-      const k = Math.floor(p[0] / eps) + "," + Math.floor(p[1] / eps);
+      const k = (Math.floor(p[0] / eps) + OFF) * 2097152 + Math.floor(p[1] / eps) + OFF;
       let a = m.get(k); if (!a) { a = []; m.set(k, a); }
       a.push(p);
     }
     return m;
   },
   near2(m, x, y, eps) {
+    const OFF = 1 << 20;
     const cx = Math.floor(x / eps), cy = Math.floor(y / eps);
     let best = Infinity;
     for (let i = -1; i <= 1; i++) for (let j = -1; j <= 1; j++) {
-      const a = m.get((cx + i) + "," + (cy + j));
+      const a = m.get((cx + i + OFF) * 2097152 + cy + j + OFF);
       if (!a) continue;
       for (const p of a) {
         const d = (p[0] - x) * (p[0] - x) + (p[1] - y) * (p[1] - y);
@@ -150,20 +154,33 @@ const twist = {
     this.R0 = Math.hypot(W, H) / 2 + this.s * 4;
     this.base = this.hex(this.s, this.R0);
     this.curve = [];
-    const eps = this.s * 0.30;
+    // ONE registration instrument everywhere: mean gaussian alignment
+    // (σ = 0.24·s, hash cell 0.60·s — the field the eye reads as moiré).
+    // The resonance curve and the live ledger S = 1 − R must agree.
+    const mA = this.hash(this.base, this.s * 0.60);
+    const sig = this.s * 0.24, twoSig2 = 2 * sig * sig;
     for (let i = 0; i <= 260; i++) {
       const th = lerp(0.15, 6.0, i / 260) * Math.PI / 180;
-      this.curve.push([th, this.alignment(this.base, this.rotated(this.base, th), eps)]);
+      const B = this.rotated(this.base, th);
+      let sum = 0;
+      for (const p of B) sum += Math.exp(-this.near2(mA, p[0], p[1], this.s * 0.60) / twoSig2);
+      this.curve.push([th, sum / B.length]);
     }
     this.windows = [];
     for (let i = 2; i < this.curve.length - 2; i++) {
       const v = this.curve[i][1];
-      if (v > 0.10 && v > this.curve[i - 1][1] && v > this.curve[i + 1][1] &&
-          v > this.curve[i - 2][1] && v > this.curve[i + 2][1]) {
-        const last = this.windows[this.windows.length - 1];
-        if (!last || this.curve[i][0] - last[0] > 0.12 * Math.PI / 180)
-          this.windows.push(this.curve[i]);
-      }
+      if (!(v > 0.10 && v > this.curve[i - 1][1] && v > this.curve[i + 1][1] &&
+            v > this.curve[i - 2][1] && v > this.curve[i + 2][1])) continue;
+      // prominence against the trough within ±0.45° — comb teeth stand
+      // ~0.01–0.04 above their troughs; sampling noise stays under 0.006.
+      let trough = Infinity;
+      for (let j = Math.max(0, i - 20); j <= Math.min(this.curve.length - 1, i + 20); j++)
+        if (this.curve[j][1] < trough) trough = this.curve[j][1];
+      if (v - trough < 0.006) continue;
+      const last = this.windows[this.windows.length - 1];
+      if (last && this.curve[i][0] - last[0] <= 0.4 * Math.PI / 180) {
+        if (v > last[1]) this.windows[this.windows.length - 1] = this.curve[i];
+      } else this.windows.push(this.curve[i]);
     }
     this.flashes = [];
   },
@@ -184,9 +201,12 @@ const twist = {
   frame(dt, t) {
     const cx = W / 2, cy = H / 2;
     const s = this.s, th = this.theta * Math.PI / 180;
-    const eps = s * 0.30;
     const A = this.base, B = this.rotated(A, th);
-    const mA = this.hash(A, eps);
+    // INVARIANT: hash and near2 share one cell size. (The shipped toy broke
+    // this — its S meter and flashes were dead. Fixed and kept under test.)
+    // One instrument: registration R = mean gaussian alignment (σ = 0.24·s);
+    // ledger S = 1 − R — the same quantity the resonance curve integrates.
+    const grid = s * 0.60;
     const sig = s * 0.24, twoSig2 = 2 * sig * sig;
 
     ctx.fillStyle = "#0a1a24";
@@ -206,17 +226,18 @@ const twist = {
     }
     ctx.globalCompositeOperation = "source-over";
 
-    if (!this.alignCache || this._cacheTheta !== this.theta || ((this.frameNo = (this.frameNo || 0) + 1) % 6 === 0)) {
+    if (!this.alignCache || ((this.frameNo = (this.frameNo || 0) + 1) % 6 === 0)) {
       this._cacheTheta = this.theta;
+      const mA = this.hash(A, grid);
       this.alignCache = new Float32Array(B.length);
-      let S = 0, n = 0;
+      let sum = 0;
       for (let i = 0; i < B.length; i++) {
-        const d2 = this.near2(mA, B[i][0], B[i][1], eps * 3);
+        const d2 = this.near2(mA, B[i][0], B[i][1], grid);
         const al = Math.exp(-d2 / twoSig2);
         this.alignCache[i] = al;
-        S += al; n++;
+        sum += al;
       }
-      this.S = S / n;
+      this.S = 1 - sum / B.length; // ledger S = 1 − registration, curve's definition
     }
     for (let i = 0; i < B.length; i++) {
       if (this.alignCache[i] > 0.86 && Math.random() < 0.003)
@@ -321,14 +342,25 @@ const flock = {
         vx: Math.cos(a), vy: Math.sin(a)
       });
     }
+    // parliament convenes by circling: seed tangential velocity so the ring
+    // is the attractor, not a lucky accident of the initial conditions.
+    if (this.fiction === "parliament") this.seedOrbit();
     this.grid = new Map();
+  },
+  seedOrbit() {
+    for (const b of this.birds) {
+      const ang = Math.atan2(b.y - H / 2, b.x - W / 2) + Math.PI / 2;
+      const sp = FICTIONS.parliament.vmax * 0.7;
+      b.vx = Math.cos(ang) * sp + (Math.random() - 0.5) * 0.2;
+      b.vy = Math.sin(ang) * sp + (Math.random() - 0.5) * 0.2;
+    }
   },
   resize() { if (state.mode === "flock") this.init(); },
   controls() {
     ctrlEl.appendChild(makeButtons(
       Object.keys(FICTIONS).map(k => [k, FICTIONS[k].label]),
       () => this.fiction,
-      k => { this.fiction = k; }));
+      k => { this.fiction = k; if (k === "parliament") this.seedOrbit(); }));
   },
   frame(dt, t) {
     const F = FICTIONS[this.fiction];
@@ -388,7 +420,11 @@ const flock = {
       if (F.tgt) { fx += (lx - b.x) * 0.00045 * F.tgt; fy += (ly - b.y) * 0.00045 * F.tgt; }
       if (F.pen) {
         const dx = cx - b.x, dy = cy - b.y, d = Math.hypot(dx, dy) || 1;
-        if (d > penR) { fx += dx / d * 0.06; fy += dy / d * 0.06; }
+        if (d > penR) {
+          const ov = d - penR; // spring past the fence: overshoot must cost
+          fx += dx / d * (0.06 + ov * 0.012);
+          fy += dy / d * (0.06 + ov * 0.012);
+        }
         fx *= 0.985; fy *= 0.985;
       }
       if (F.ring) {
@@ -467,7 +503,8 @@ const chirp = {
   controls() {
     ctrlEl.appendChild(makeSlider(
       "PHASE TWIST / ELEMENT", -60, 60, 0.5,
-      () => this.twist, v => { this.twist = v; this.auto = false; },
+      () => this.auto ? this.heading : this.twist,
+      v => { this.twist = v; this.auto = false; },
       v => v.toFixed(1) + "°"));
     ctrlEl.appendChild(makeButtons(
       [["scan", "AUTO-SWEEP"], ["hold", "HOLD BEAM"]],
@@ -478,18 +515,38 @@ const chirp = {
     const k = TAU / this.lambda;
     let re = 0, im = 0;
     const w = t * TAU * 0.9;
-    const dphi = this.heading * Math.PI / 180;
+    const fph = this.focusPh(src);
     for (let n = 0; n < this.N; n++) {
       const dx = x - src[n][0], dy = y - src[n][1];
-      const ph = k * Math.sqrt(dx * dx + dy * dy) - w + n * dphi;
+      const ph = k * Math.sqrt(dx * dx + dy * dy) - w + fph[n];
       re += Math.cos(ph); im += Math.sin(ph);
     }
     return Math.sqrt(re * re + im * im) / this.N;
   },
+  focusPh(src) {
+    // time-reversal focusing: each element pre-compensates its path length to
+    // the steered focus point, so the wavefront arrives in phase there (I→1).
+    // a linear phase ramp would only tilt the beam — in the near field the
+    // focal spot is the physical way to buy position with time.
+    const k = TAU / this.lambda, h = this.heading * Math.PI / 180, fr = H * 0.55;
+    const cx = (src[0][0] + src[this.N - 1][0]) / 2;
+    const Fx = cx + Math.sin(h) * fr, Fy = src[0][1] - Math.cos(h) * fr;
+    const out = new Array(this.N);
+    for (let n = 0; n < this.N; n++) {
+      const dx = Fx - src[n][0], dy = Fy - src[n][1];
+      out[n] = -k * Math.sqrt(dx * dx + dy * dy);
+    }
+    return out;
+  },
+  focusXY(src) {
+    const h = this.heading * Math.PI / 180, fr = H * 0.55;
+    const cx = (src[0][0] + src[this.N - 1][0]) / 2;
+    return [cx + Math.sin(h) * fr, src[0][1] - Math.cos(h) * fr];
+  },
   frame(dt, t) {
     if (!this.off) this.init();
     if (this.auto) this.heading = 52 * Math.sin(t * 0.22);
-    this.twist = this.heading;
+    else this.heading = this.twist;
 
     const src = [];
     for (let n = 0; n < this.N; n++)
@@ -506,7 +563,7 @@ const chirp = {
       const img = octx.createImageData(gw, gh);
       const d = img.data;
       const k = TAU / this.lambda, wv = t * TAU * 0.9;
-      const dphi = this.heading * Math.PI / 180;
+      const fph = this.focusPh(src);
       for (let gy = 0; gy < gh; gy++) {
         const y = gy * st + st / 2;
         for (let gx = 0; gx < gw; gx++) {
@@ -514,7 +571,7 @@ const chirp = {
           let re = 0, im = 0;
           for (let n = 0; n < this.N; n++) {
             const dx = x - src[n][0], dy = y - src[n][1];
-            const ph = k * Math.sqrt(dx * dx + dy * dy) - wv + n * dphi;
+            const ph = k * Math.sqrt(dx * dx + dy * dy) - wv + fph[n];
             re += Math.cos(ph); im += Math.sin(ph);
           }
           const I = Math.sqrt(re * re + im * im) / this.N;
@@ -538,6 +595,15 @@ const chirp = {
       ctx.fillRect(s[0] - 2, s[1] - 3, 4, 6);
     }
 
+    // the focal spot — where the array is listening
+    const F = this.focusXY(src);
+    ctx.strokeStyle = "rgba(70,224,192,.55)";
+    ctx.beginPath(); ctx.arc(F[0], F[1], 7, 0, TAU); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(F[0] - 11, F[1]); ctx.lineTo(F[0] + 11, F[1]);
+    ctx.moveTo(F[0], F[1] - 11); ctx.lineTo(F[0], F[1] + 11); ctx.stroke();
+    ctx.fillStyle = "rgba(70,224,192,.75)"; ctx.font = "8px ui-monospace, monospace";
+    ctx.fillText("FOCUS", F[0] + 10, F[1] - 10);
+
     const arrayCx = (src[0][0] + src[this.N - 1][0]) / 2;
     for (const f of this.fish) {
       f.x += f.vx; f.y += f.vy;
@@ -551,7 +617,8 @@ const chirp = {
         const closure = (f.lastR !== null) ? (f.lastR - r) / Math.max(0.5, t - f.lastT) : null;
         this.log.unshift({
           r, closure,
-          brg: Math.atan2(f.x - arrayCx, (H * 0.94 - f.y)) * 180 / Math.PI
+          brg: Math.atan2(f.x - arrayCx, (H * 0.94 - f.y)) * 180 / Math.PI,
+          h: this.heading // beam heading at detection — makes bearing verifiable
         });
         if (this.log.length > 4) this.log.pop();
         f.lastR = r; f.lastT = t;
@@ -585,6 +652,7 @@ const chirp = {
     return [
       ["TWIST / ELEMENT", this.heading.toFixed(1) + "°", "hot"],
       ["ELEMENTS", "12 TRANSDUCERS", ""],
+      ["FOCUS RANGE", (H * 0.55).toFixed(0) + " PX", ""],
       ["CONTACT RANGE", c ? c.r.toFixed(2) + " NM" : "—", "sig"],
       ["CONTACT BEARING", c ? c.brg.toFixed(1) + "°" : "—", ""],
       ["CLOSURE", c && c.closure !== null && c.closure !== undefined
