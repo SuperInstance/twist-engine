@@ -55,8 +55,13 @@ The birds are identical in every mode.
 
 The ledger plots **polarization** |mean heading| — the measurable difference a
 word makes on identical bodies. This is the operational-fiction thesis as a
-physics demo: *the word builds the group.* See
-[A Pack Thinks Like Dogs](https://github.com/SuperInstance/AI-Writings/blob/main/philosophy/a-pack-thinks-like-dogs.md).
+physics demo: *the word builds the group.* The nouns are the cheapest line of code in the
+system and they move the most physics — measured on identical agents in
+`tests/sim.test.js` (murmuration 0.606 / pack 0.561 / kennel containment /
+parliament ring). See
+[A Pack Thinks Like Dogs](https://github.com/SuperInstance/AI-Writings/blob/main/philosophy/a-pack-thinks-like-dogs.md)
+and its measured sequel,
+[Word-Calling](https://github.com/SuperInstance/AI-Writings/blob/main/philosophy/word-calling.md).
 
 ## CHIRP — resolution bought with bandwidth, position bought with time
 
