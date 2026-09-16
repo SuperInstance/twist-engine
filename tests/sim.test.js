@@ -189,6 +189,70 @@ function testChirp(boot) {
 }
 
 /* ============================ QUILT ============================ */
+function testPerm(boot) {
+  boot.resizeWindow(960, 600);
+  boot.setMode("perm");
+  boot.pump(6);
+  const P = () => boot.evalJs("({ n: perm.n, inv: perm.inv, cyc: perm.cyc, lis: perm.lisV, fixed: perm.fixed, deranged: perm.deranged, steps: perm.steps })");
+
+  let r = P();
+  check("perm: identity at boot", r.inv === 0 && r.cyc === r.n && r.lis === r.n && r.fixed === r.n && !r.deranged,
+    JSON.stringify(r));
+  record("perm.boot", r);
+
+  // twist k=3 on identity = 3-cycle (1 2 3): inv 2, cycles n−2, parity even
+  boot.evalJs("perm.twistBlock(3)");
+  boot.pump(2);
+  r = P();
+  check("perm: twist k=3 is the 3-cycle (inv 2, cyc n−2, even)",
+    r.inv === 2 && r.cyc === r.n - 2 && r.inv % 2 === 0,
+    JSON.stringify(r));
+
+  // full twist k=n = one n-cycle: deranged, inv n−1
+  boot.evalJs("perm.init(); perm.twistBlock(perm.n)");
+  boot.pump(2);
+  r = P();
+  check("perm: full twist is an n-cycle (deranged, inv n−1, one cycle)",
+    r.deranged && r.inv === r.n - 1 && r.cyc === 1,
+    JSON.stringify(r));
+  record("perm.fullTwist", r);
+
+  // adjacent swap: |π| moves by exactly 1, σ_i is an involution
+  boot.evalJs("perm.init(); perm.recompute(); perm.swap(2); perm.recompute(); perm._d1 = perm.inv; perm.swap(2); perm.recompute(); perm._d2 = perm.inv;");
+  boot.pump(2);
+  check("perm: σ_i then σ_i again returns (inv ±1, involution)",
+    boot.evalJs("perm._d1") === 1 && boot.evalJs("perm._d2") === 0,
+    `d1=${boot.evalJs("perm._d1")} d2=${boot.evalJs("perm._d2")}`);
+
+  // random adjacent-swap walk: inversion CLT — μ → n(n−1)/4, σ² → n(n−1)(2n+5)/72
+  boot.evalJs("perm.init(); perm.walking = true; perm.rate = 60;");
+  boot.pump(700); // ~11.7 sim-seconds ≈ 700 swaps
+  const stats = boot.evalJs("({ m: perm.walkInv.length, mu: perm.walkInv.reduce((a,x)=>a+x,0)/perm.walkInv.length, steps: perm.steps })");
+  const eT = 6 * 5 / 4, vT = 6 * 5 * 17 / 72;
+  const invNow = boot.evalJs("perm.inv");
+  const maxInv = 6 * 5 / 2;
+  check("perm: walk samples ≈ swaps", stats.m >= 650 && stats.m <= 760, `samples=${stats.m}`);
+  check("perm: inversion CLT mean (live vs n(n−1)/4=7.5)",
+    Math.abs(stats.mu - eT) < 1.2, `μ=${stats.mu.toFixed(2)}`);
+  check("perm: inversion bounded in [0, n(n−1)/2]", invNow >= 0 && invNow <= maxInv, `inv=${invNow}`);
+  record("perm.walk", { samples: stats.m, mu: +stats.mu.toFixed(2), theoryMean: eT, theoryVar: +vT.toFixed(2) });
+  boot.evalJs("perm.walking = false;");
+
+  // subfactorial reference values (derangement counts)
+  check("perm: !n reference (!4=9, !6=265)",
+    boot.evalJs("subfactorial(4)") === 9 && boot.evalJs("subfactorial(6)") === 265,
+    `!4=${boot.evalJs("subfactorial(4)")} !6=${boot.evalJs("subfactorial(6)")}`);
+
+  // LIS of the reversed arrangement is 1
+  boot.evalJs("perm.init(); perm.arr.reverse(); perm.recompute();");
+  boot.pump(2);
+  check("perm: LIS(reverse) = 1, inv = max", boot.evalJs("perm.lisV") === 1 && boot.evalJs("perm.inv") === 15,
+    `lis=${boot.evalJs("perm.lisV")} inv=${boot.evalJs("perm.inv")}`);
+
+  boot.evalJs("perm.init()");
+  boot.setMode("twist");
+}
+
 function testQuilt(boot) {
   const sweeps = [];
   for (const K of [0, 1.1, 3]) {
@@ -248,6 +312,7 @@ try {
   timed("flock", () => testFlock(boot));
   timed("chirp", () => testChirp(boot));
   timed("quilt", () => testQuilt(boot));
+  timed("perm", () => testPerm(boot));
 } catch (e) {
   fail++;
   failures.push("HARNESS EXCEPTION: " + e.stack);

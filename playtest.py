@@ -57,7 +57,7 @@ async def main():
 
             results = {}
 
-            for mode in ["twist", "flock", "chirp", "quilt"]:
+            for mode in ["twist", "flock", "chirp", "quilt", "perm"]:
                 print(f"\n=== MODE: {mode.upper()} ===")
                 # Click the tab
                 await page.click(f'.tab[data-mode="{mode}"]')
@@ -138,6 +138,21 @@ async def main():
                         for v in after_b1:
                             print(f"    {v}")
                         results[mode]["b1_after_twist"] = after_b1
+
+                if mode == "perm":
+                    # Twist the block, watch the ledger move
+                    buttons = await page.query_selector_all("#ctrl-body button")
+                    for b in buttons:
+                        label = await b.inner_text()
+                        if "TWIST K" in label:
+                            await b.click()
+                            break
+                    await page.wait_for_timeout(600)
+                    after = await page.eval_on_selector_all("#metrics .v", "els => els.map(e => e.innerText)")
+                    print(f"  after TWIST K (cycle):")
+                    for v in after:
+                        print(f"    {v}")
+                    results[mode]["ledger_after_twist"] = after
 
                     # Test STEP BACK
                     sb = await page.query_selector('button[data-k="zoom"]')

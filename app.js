@@ -277,7 +277,7 @@ const twist = {
   },
   chart() {
     const w = chartCv.clientWidth, h = 72;
-    chartAxes("S(THETA) — ALIGNMENT, MEASURED");
+    chartAxes("R(THETA) — REGISTRATION, MEASURED");
     const x0 = 0.15 * Math.PI / 180, x1 = 6.0 * Math.PI / 180;
     chartCtx.beginPath();
     for (let i = 0; i < this.curve.length; i++) {
@@ -792,9 +792,214 @@ const quilt = {
 };
 
 /* ============================================================
+   PERM — the twist law in S_n
+   arrangement model: arr[i] = wire label sitting at position i
+   (one-line notation, left→right along the top rail).
+   · adjacent swap at (i, i+1) = Coxeter generator σ_i
+   · "twist k" rotates the first k entries left by one = the
+     k-cycle (1 2 … k) = the braid word σ1σ2…σ{k−1}
+     — the exact analog of TWIST's k-block rotation.
+   ledger: inversions (Cayley distance), cycles, parity, LIS,
+   fixed points, derangement — every quantity computed live.
+   ============================================================ */
+function subfactorial(n) {
+  if (n === 0) return 1;
+  let a = 1, b = 0; // !0 = 1, !1 = 0; !(i) = (i−1)(!(i−1) + !(i−2))
+  for (let i = 2; i <= n; i++) { const t = (i - 1) * (a + b); a = b; b = t; }
+  return b;
+}
+
+const perm = {
+  n: 6, arr: [], tw: 3, iSel: 1,
+  walking: false, rate: 6, acc: 0, railAcc: 0,
+  hist: [], walkInv: [], steps: 0, flash: null,
+  inv: 0, cyc: 0, lisV: 0, fixed: 0,
+  doctrine: "one law: adjacent swaps generate everything. <em>a twist is a cycle.</em>",
+  title: "PERM", sub: "misalignment as a permutation — the twist law in S_n",
+
+  resize() { if (state.mode === "perm") this.init(); },
+  init() {
+    this.arr = Array.from({ length: this.n }, (_, i) => i);
+    this.hist = []; this.walkInv = []; this.steps = 0;
+    this.acc = 0; this.railAcc = 0; this.flash = null;
+    this.recompute();
+  },
+
+  // ---- group arithmetic ----
+  recompute() {
+    const a = this.arr, n = this.n;
+    let inv = 0;
+    for (let i = 0; i < n; i++) for (let j = i + 1; j < n; j++)
+      if (a[i] > a[j]) inv++;
+    const seen = new Array(n).fill(false);
+    let c = 0;
+    for (let i = 0; i < n; i++) if (!seen[i]) { c++; let j = i; while (!seen[j]) { seen[j] = true; j = a[j]; } }
+    const top = [];
+    for (const x of a) {
+      let lo = 0, hi = top.length;
+      while (lo < hi) { const m = (lo + hi) >> 1; if (top[m] < x) lo = m + 1; else hi = m; }
+      top[lo] = x;
+    }
+    let fixed = 0;
+    for (let i = 0; i < n; i++) if (a[i] === i) fixed++;
+    this.inv = inv; this.cyc = c; this.lisV = top.length; this.fixed = fixed;
+    this.deranged = fixed === 0;
+  },
+  swap(i) { // Coxeter generator σ_i at positions (i, i+1)
+    if (i < 0 || i + 1 >= this.n) return;
+    const t = this.arr[i]; this.arr[i] = this.arr[i + 1]; this.arr[i + 1] = t;
+    this.steps++; this.flash = { i, life: 1 };
+  },
+  twistBlock(k) { // the k-cycle (1 2 … k) on the first k positions
+    if (k < 2 || k > this.n) return;
+    const head = this.arr.slice(0, k);
+    head.push(head.shift());
+    this.arr.splice(0, k, ...head);
+    this.steps++; this.flash = { i: 0, life: 1 };
+  },
+  shuffle() {
+    for (let i = this.n - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      const t = this.arr[i]; this.arr[i] = this.arr[j]; this.arr[j] = t;
+    }
+    this.steps++; this.flash = null;
+  },
+
+  controls() {
+    ctrlEl.appendChild(makeSlider("WIRES N", 3, 12, 1,
+      () => this.n, v => { this.n = v; this.tw = Math.min(this.tw, v); this.iSel = Math.min(this.iSel, v - 2); this.init(); ctrlEl.innerHTML = ""; this.controls(); },
+      v => String(v)));
+    ctrlEl.appendChild(makeSlider("TWIST BLOCK K", 2, this.n, 1,
+      () => this.tw, v => { this.tw = v; },
+      v => String(v)));
+    ctrlEl.appendChild(makeButtons(
+      [["twist", "TWIST K (CYCLE)"], ["swap", "SWAP σ"], ["shuffle", "SHUFFLE"], ["reset", "RESET"]],
+      () => "",
+      v => {
+        if (v === "twist") this.twistBlock(this.tw);
+        else if (v === "swap") this.swap(this.iSel);
+        else if (v === "shuffle") this.shuffle();
+        else this.init();
+      }));
+    ctrlEl.appendChild(makeSlider("SWAP INDEX i", 1, this.n - 1, 1,
+      () => this.iSel + 1, v => { this.iSel = v - 1; },
+      v => "σ_" + v));
+    ctrlEl.appendChild(makeButtons(
+      [[true, "WALK: ON"], [false, "WALK: OFF"]],
+      () => this.walking,
+      v => { this.walking = v; }));
+    ctrlEl.appendChild(makeSlider("WALK RATE /S", 1, 60, 1,
+      () => this.rate, v => { this.rate = v; },
+      v => String(v)));
+  },
+
+  frame(dt, t) {
+    if (this.walking) {
+      this.acc += dt * this.rate;
+      while (this.acc >= 1) {
+        this.acc -= 1;
+        this.swap(Math.floor(Math.random() * (this.n - 1)));
+        this.recompute();
+        this.walkInv.push(this.inv);
+        if (this.walkInv.length > 2000) this.walkInv.shift();
+      }
+    }
+    this.recompute();
+    this.railAcc += dt;
+    if (this.railAcc > 0.12) { this.railAcc = 0; this.hist.push(this.inv); if (this.hist.length > 220) this.hist.shift(); }
+
+    ctx.fillStyle = "#0a1a24"; ctx.fillRect(0, 0, W, H);
+    const n = this.n, pad = Math.max(56, W * 0.09);
+    const y0 = H * 0.14, y1 = H * 0.86;
+    const span = W - 2 * pad;
+    const ax = i => n === 1 ? W / 2 : pad + i * span / (n - 1);
+
+    // rails
+    ctx.strokeStyle = "rgba(70,224,192,.25)"; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(pad - 24, y0); ctx.lineTo(W - pad + 24, y0); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(pad - 24, y1); ctx.lineTo(W - pad + 24, y1); ctx.stroke();
+
+    // wires: position i (top) → position arr[i] (bottom); identity = straight
+    for (let i = 0; i < n; i++) {
+      const label = this.arr[i];
+      const u = n === 1 ? 0 : label / (n - 1);
+      ctx.strokeStyle = `rgba(${Math.round(lerp(70, 247, u))},${Math.round(lerp(224, 160, u))},${Math.round(lerp(192, 38, u))},.72)`;
+      ctx.lineWidth = 1.6;
+      ctx.beginPath();
+      ctx.moveTo(ax(i), y0);
+      ctx.bezierCurveTo(ax(i), lerp(y0, y1, 0.5), ax(label), lerp(y0, y1, 0.5), ax(label), y1);
+      ctx.stroke();
+    }
+
+    // swap flash
+    if (this.flash) {
+      this.flash.life -= dt * 2.2;
+      if (this.flash.life <= 0) this.flash = null;
+      else {
+        const fx = (ax(this.flash.i) + ax(Math.min(this.flash.i + 1, n - 1))) / 2;
+        const fy = lerp(y0, y1, 0.5);
+        ctx.strokeStyle = `rgba(247,160,38,${this.flash.life * 0.9})`;
+        ctx.lineWidth = 1;
+        ctx.beginPath(); ctx.arc(fx, fy, 6 + (1 - this.flash.life) * 26, 0, TAU); ctx.stroke();
+      }
+    }
+
+    // anchor pips + labels
+    ctx.font = "10px monospace";
+    ctx.fillStyle = "rgba(70,224,192,.8)";
+    for (let i = 0; i < n; i++) {
+      ctx.beginPath(); ctx.arc(ax(i), y0, 3, 0, TAU); ctx.fill();
+      ctx.beginPath(); ctx.arc(ax(i), y1, 3, 0, TAU); ctx.fill();
+      ctx.fillText(String(i), ax(i) - 3, y0 - 8);
+      ctx.fillText(String(i), ax(i) - 3, y1 + 16);
+    }
+  },
+
+  chart() {
+    const w = chartCv.clientWidth, h = 72;
+    chartAxes("INVERSIONS — CAYLEY DISTANCE |π|");
+    if (this.hist.length < 2) return;
+    const mx = Math.max(2, this.n * (this.n - 1) / 2);
+    chartCtx.beginPath();
+    for (let i = 0; i < this.hist.length; i++) {
+      const x = i / 219 * w, y = h - 6 - this.hist[i] / mx * (h - 18);
+      i ? chartCtx.lineTo(x, y) : chartCtx.moveTo(x, y);
+    }
+    chartCtx.strokeStyle = "rgba(70,224,192,.85)"; chartCtx.lineWidth = 1.2; chartCtx.stroke();
+    // theory line: uniform mean E = n(n−1)/4
+    const ey = h - 6 - (this.n * (this.n - 1) / 4) / mx * (h - 18);
+    chartCtx.strokeStyle = "rgba(247,160,38,.4)"; chartCtx.setLineDash([3, 4]);
+    chartCtx.beginPath(); chartCtx.moveTo(0, ey); chartCtx.lineTo(w, ey); chartCtx.stroke();
+    chartCtx.setLineDash([]);
+  },
+
+  metrics() {
+    const rows = [
+      ["N — WIRES", String(this.n), ""],
+      ["INVERSIONS |π|", String(this.inv), "sig"],
+      ["CYCLES", String(this.cyc), ""],
+      ["PARITY", this.inv % 2 ? "odd" : "even", ""],
+      ["LIS", String(this.lisV), ""],
+      ["FIXED / DERANGED", `${this.fixed} / ${this.deranged ? "yes" : "no"}`, this.deranged ? "hot" : ""],
+      ["!N — DERANGEMENTS", String(subfactorial(this.n)), ""]
+    ];
+    if (this.walkInv.length >= 20) {
+      const m = this.walkInv.length;
+      const mu = this.walkInv.reduce((a, x) => a + x, 0) / m;
+      const va = this.walkInv.reduce((a, x) => a + (x - mu) * (x - mu), 0) / m;
+      const eT = this.n * (this.n - 1) / 4;
+      const vT = this.n * (this.n - 1) * (2 * this.n + 5) / 72;
+      rows.push(["WALK μ (live / theory)", `${mu.toFixed(2)} / ${eT.toFixed(2)}`, ""]);
+      rows.push(["WALK σ² (live / theory)", `${va.toFixed(2)} / ${vT.toFixed(2)}`, ""]);
+    }
+    return rows;
+  }
+};
+
+/* ============================================================
    mode manager + boot
    ============================================================ */
-const MODES = { twist, flock, chirp, quilt };
+const MODES = { twist, flock, chirp, quilt, perm };
 const state = { mode: "twist", t: 0 };
 
 function setMode(name) {

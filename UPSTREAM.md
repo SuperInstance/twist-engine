@@ -71,9 +71,25 @@ We add:
   - `chirp-hold-target.json` — sonar holding a bearing
   - `quilt-topology-twist.json` — tempo twist high enough for b1 ≈ 8
 
-We do **not** modify `app.js`, `index.html`, or `styles.css` — the toy is
-a closed physics exhibit. Any UI improvements we ship live in the docs
-and the playtest script.
+We do **not** modify `index.html` or `styles.css`.
+
+**Exception — the playtest wave (`b77ea50`, kimi1):** Casey's standing
+order for this repo is *massive playtesting, refining, polishing*. The
+playtest found real bugs in `app.js` and fixed them, with every fix
+covered by the node sim suite (`tests/sim.test.js`, 78 checks):
+
+- TWIST: `hash()`/`near2()` cell-size mismatch made the S meter read ~0
+  and flashes never spawn (shipped bug). One grid now, enforced by test.
+- TWIST: S and the resonance curve share one definition (registration
+  R = mean gaussian alignment, σ = 0.24·s; S = 1 − R). Windows are
+  trough-prominence teeth of the comb (~0.75° spacing).
+- TWIST: integer spatial-hash keys (perf); `resize()` handler added.
+- FLOCK: kennel fence is a spring past the pen radius (containment test);
+  parliament reseeds its ring orbit on small viewports.
+- CHIRP: contacts log heading at detection; manual chirp slider added.
+
+Divergence rule going forward: physics-honest fixes with live-measured
+ledger claims ship in `app.js`; everything else lives in docs/playtest.
 
 ## Why static files
 
