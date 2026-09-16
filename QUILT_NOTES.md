@@ -91,10 +91,12 @@ workspaces. Same idea: don't read the cells, read the topology.
 
 ## Cross-pollination: what the toy teaches the canon
 
-- **The holes are a free metric.** Computing b1 in `live-canon.casey-
-  digennaro.workers.dev` for the canon's citation graph would give us a
-  single number that tracks canon health. Currently we don't expose it.
-  The toy shows how easy it is to add.
+- **The holes are a free metric.** Computing b1 in the canon's citation
+  graph gives us a single number that tracks canon health. We added
+  `GET /canon-b1` to the a2a-v3 Worker. Live result:
+  `b1 = 39, V = 29, E = 67, C = 1`. The canon is one big component
+  with 39 holes — topologically interesting, like a QUILT graph at
+  δ ≈ 0.15. The operator's view, computed.
 - **Tempo twist as policy knob.** The toy uses δ as a slider; the canon
   uses block time + retention policy. Both control *how much
   interference* the substrate produces. A future canon feature: a
