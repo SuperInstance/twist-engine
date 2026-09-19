@@ -1,0 +1,31 @@
+{
+  "canon": "1",
+  "name": "twist-engine",
+  "mission": "The commensuration instrument — layers plus deliberate offset makes interference, measured honestly across TWIST, FLOCK, CHIRP, QUILT, and PERM substrates.",
+  "state": "active",
+  "family": "theory",
+  "vessel": "FM",
+  "born_from": [],
+  "feeds": [],
+  "owed_by": [
+    "quilt-studio"
+  ],
+  "canonical_docs": [
+    "README.md"
+  ],
+  "ledger": "git-log",
+  "verified": "2026-09-20",
+  "schema": "fleet-canon/1",
+  "generated": "2026-09-20",
+  "generator": "canon-lint --emit-json (CCC)",
+  "agent_facing": {
+    "test_contract": {
+      "cmd": null,
+      "probe": "look for package.json / Cargo.toml / Makefile / CI workflow"
+    },
+    "key_paths": [],
+    "onboarding": [
+      "Read CANON.md, then the first canonical_doc, then run the test contract before touching anything."
+    ]
+  }
+}
