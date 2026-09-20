@@ -1,5 +1,5 @@
 """
-playtest.py — Headless verification of twist-engine's four modes.
+playtest.py — Headless verification of twist-engine's six modes.
 
 Boots a local HTTP server, opens the page in headless Chromium,
 exercises each mode, captures a metric snapshot, and prints a
@@ -57,7 +57,7 @@ async def main():
 
             results = {}
 
-            for mode in ["twist", "flock", "chirp", "quilt", "perm"]:
+            for mode in ["twist", "flock", "chirp", "quilt", "perm", "setl"]:
                 print(f"\n=== MODE: {mode.upper()} ===")
                 # Click the tab
                 await page.click(f'.tab[data-mode="{mode}"]')
@@ -161,6 +161,34 @@ async def main():
                         await page.wait_for_timeout(500)
                         results[mode]["step_back_pressed"] = True
 
+                if mode == "setl":
+                    # Twist by the fixed offset K, watch registry S and displacement
+                    buttons = await page.query_selector_all("#ctrl-body button")
+                    for b in buttons:
+                        label = await b.inner_text()
+                        if "TWIST K" in label:
+                            await b.click()
+                            break
+                    await page.wait_for_timeout(600)
+                    after = await page.eval_on_selector_all("#metrics .v", "els => els.map(e => e.innerText)")
+                    print(f"  after TWIST K (A△K):")
+                    for v in after:
+                        print(f"    {v}")
+                    results[mode]["ledger_after_twist"] = after
+
+                    # Turn the walk on, let the Ehrenfest convergence show
+                    for b in await page.query_selector_all("#ctrl-body button"):
+                        if "WALK: ON" in (await b.inner_text()):
+                            await b.click()
+                            break
+                    await page.wait_for_timeout(3000)
+                    walk_metrics = await page.eval_on_selector("#metrics", "el => el.innerText")
+                    print(f"  after 3s walk:")
+                    for line in walk_metrics.splitlines():
+                        if "WALK" in line or "RANK" in line:
+                            print(f"    {line}")
+                    results[mode]["walk_metrics"] = walk_metrics
+
             # Take a final screenshot of TWIST for the report
             await page.click('.tab[data-mode="twist"]')
             await page.wait_for_timeout(800)
@@ -181,6 +209,11 @@ async def main():
             await page.wait_for_timeout(800)
             await page.screenshot(path="/tmp/twist-engine-chirp.png", full_page=True)
             print("  ✓ screenshot: /tmp/twist-engine-chirp.png")
+
+            await page.click('.tab[data-mode="setl"]')
+            await page.wait_for_timeout(800)
+            await page.screenshot(path="/tmp/twist-engine-setl.png", full_page=True)
+            print("  ✓ screenshot: /tmp/twist-engine-setl.png")
 
             await browser.close()
     finally:

@@ -1,6 +1,6 @@
 // Simulation tests for the twist engine.
 // Runs the actual app.js under a stubbed DOM with a seeded RNG,
-// sweeps the parameter space of all four substrates, and asserts
+// sweeps the parameter space of all six substrates, and asserts
 // physics invariants + emergent behavior. No browser needed.
 //
 //   node tests/sim.test.js           → assert + report
@@ -301,6 +301,179 @@ function testQuilt(boot) {
     [0, 1.1, 3].map(K => `K=${K}: ${at(K, 0).meanB1.toFixed(0)}→${at(K, 0.4).meanB1.toFixed(0)}`).join("  "));
 }
 
+/* ============================ SETL ============================ */
+function testSetl(boot) {
+  boot.resizeWindow(960, 600);
+  boot.setMode("setl");
+  boot.pump(6);
+
+  // boot state: n=5, A=∅, K={0,1} — full misalignment, maximal displacement
+  let r = boot.evalJs("({ n: setl.n, A: setl.A, K: setl.K, rank: setl.rank, k: setl.k, inter: setl.inter, R: setl.R, S: setl.S, disp: setl.displacement, sperner: setl.sperner, pairs: setl.complementPairs, dedekind: setl.dedekind, chain: setl.maxChain })");
+  check("setl: boot state (∅ vs K={0,1}: rank 0, S=1, disp +2)",
+    r.n === 5 && r.A === 0 && r.K === 3 && r.rank === 0 && r.k === 2 &&
+    r.inter === 0 && r.R === 0 && r.S === 1 && r.disp === 2,
+    JSON.stringify(r));
+  check("setl: complement pairs 2^(n−1) at boot", r.pairs === 16, `pairs=${r.pairs}`);
+  check("setl: longest chain = n+1 vertices", r.chain === 6, `chain=${r.chain}`);
+  record("setl.boot", r);
+
+  // Sperner width per n (Sperner 1928: width of B_n = C(n,⌊n/2⌋)) + rank-count identity Σ C(n,r) = 2^n
+  const spernerExpect = { 4: 6, 5: 10, 6: 20, 7: 35, 8: 70 };
+  for (let n = 4; n <= 8; n++) {
+    boot.evalJs(`setl.n = ${n}; setl.init(); setl.recompute();`);
+    const s = boot.evalJs("setl.sperner");
+    check(`setl/n=${n}: Sperner width C(n,floor(n/2))`, s === spernerExpect[n], `got ${s}`);
+    const sum = boot.evalJs(`(() => { let t = 0; for (let i = 0; i <= ${n}; i++) t += binom(${n}, i); return t; })()`);
+    check(`setl/n=${n}: rank counts sum to 2^n`, sum === Math.pow(2, n), `sum=${sum}`);
+  }
+  record("setl.sperner", spernerExpect);
+
+  // Dedekind trace: shipped table is exact, cited — never computed past the view
+  const dedekindExpect = { 0: "2", 1: "3", 2: "6", 3: "20", 4: "168", 5: "7581",
+    6: "7828352", 7: "2414682040998", 8: "56130437228687557907788" };
+  for (const [n, v] of Object.entries(dedekindExpect))
+    check(`setl: Dedekind M(${n}) = ${v}`, boot.evalJs(`DEDEKIND[${n}]`) === v,
+      `got ${boot.evalJs(`DEDEKIND[${n}]`)}`);
+
+  // INDEPENDENT verification: enumerate antichains of B_n for n ≤ 4 by brute
+  // force and compare against the shipped table. A family F ⊆ B_n is an
+  // antichain iff no two distinct members are comparable under ⊆.
+  // (Dedekind 1897; OEIS A000372.)
+  const dedekindByEnumeration = (n) => {
+    const N = 1 << n, full = N - 1;
+    let count = 0;
+    for (let fam = 0; fam < (1 << N); fam++) { // family as bitmask over the 2^n vertices
+      let ok = true;
+      for (let a = 0; a < N && ok; a++) {
+        if (!(fam & (1 << a))) continue;
+        for (let b = a + 1; b < N && ok; b++) {
+          if (!(fam & (1 << b))) continue;
+          // comparable iff a ⊆ b or b ⊆ a (as bitmasks); distinct by construction
+          if ((a & b) === a || (a & b) === b) ok = false;
+        }
+      }
+      if (ok) count++;
+    }
+    return count; // n=0: full=0 handled — the empty family and {∅} both antichains
+  };
+  for (const n of [0, 1, 2, 3, 4])
+    check(`setl: M(${n}) by brute-force enumeration`,
+      String(dedekindByEnumeration(n)) === dedekindExpect[n],
+      `enumerated=${dedekindByEnumeration(n)} table=${dedekindExpect[n]}`);
+
+  // twist-law arithmetic over ALL pairs A,K at n=4 (256 pairs):
+  // · involution  (A△K)△K = A
+  // · displacement identity  |A△K| − |A| = |K| − 2|A∩K|
+  boot.evalJs("setl.n = 4; setl.init();");
+  const laws = boot.evalJs(`(() => {
+    let inv = true, disp = true;
+    for (let A = 0; A < 16; A++) for (let K = 0; K < 16; K++) {
+      if (((A ^ K) ^ K) !== A) inv = false;
+      const d = popcount(A ^ K) - popcount(A) - (popcount(K) - 2 * popcount(A & K));
+      if (d !== 0) disp = false;
+    }
+    return { inv, disp };
+  })()`);
+  check("setl: twist is an involution τ_K∘τ_K = id (all 256 pairs)", laws.inv);
+  check("setl: displacement = |K| − 2|A∩K| (all 256 pairs)", laws.disp);
+
+  // full twist K=[n] is complementation: rank ↦ n−rank, every vertex (n=5)
+  const comp = boot.evalJs(`(() => {
+    const full = (1 << 5) - 1;
+    for (let A = 0; A < 32; A++) if (popcount(A ^ full) !== 5 - popcount(A)) return false;
+    return true;
+  })()`);
+  check("setl: K=[n] ⟹ τ = complementation, rank ↦ n−rank (all 32)", comp);
+
+  // complement-pair accounting at n=5: fixed-point-free involution, 2^(n−1) pairs
+  const pairs = boot.evalJs(`(() => {
+    const full = (1 << 5) - 1;
+    for (let A = 0; A < 32; A++) {
+      const C = A ^ full;
+      if ((C ^ full) !== A || C === A || popcount(A) + popcount(C) !== 5) return false;
+    }
+    return true;
+  })()`);
+  check("setl: complement pairs — involution, no fixed points, ranks sum to n", pairs);
+
+  // a single flip is a cover relation: rank moves by exactly ±1
+  boot.evalJs("setl.n = 5; setl.init();");
+  boot.evalJs("setl.A = 0b01010; setl.recompute();");
+  const before = boot.evalJs("setl.rank");
+  boot.evalJs("setl.flip(0)"); boot.pump(2);
+  const after1 = boot.evalJs("setl.rank");
+  boot.evalJs("setl.flip(1)"); boot.pump(2);
+  const after2 = boot.evalJs("setl.rank");
+  check("setl: flip is a cover (rank ±1)",
+    Math.abs(after1 - before) === 1 && Math.abs(after2 - after1) === 1,
+    `${before} → ${after1} → ${after2}`);
+
+  // the twist on the live state: A=∅, K={0,1} → A△K={0,1}: registry 0→1, S 1→0, disp +2→−2
+  boot.evalJs("setl.init(); setl.applyTwist();"); // A: 0 → 0b00011
+  boot.pump(2);
+  r = boot.evalJs("({ A: setl.A, rank: setl.rank, R: setl.R, S: setl.S, disp: setl.displacement })");
+  check("setl: twist ∅ ↦ {0,1} — full commensuration (R=1, S=0, disp −2)",
+    r.A === 3 && r.rank === 2 && r.R === 1 && r.S === 0 && r.disp === -2,
+    JSON.stringify(r));
+
+  // no-dead-meter sweep: every ledger row must respond to a state change.
+  // Sweep A over every vertex of B_5 and require no two states share the
+  // full metric vector (if two did, that row would be unreadable — a dead meter).
+  const deadMeters = boot.evalJs(`(() => {
+    const seen = new Set();
+    for (let A = 0; A < 32; A++) {
+      setl.A = A; setl.recompute();
+      const key = setl.metrics().map(([k, v]) => v).join("|");
+      if (seen.has(key)) return A;
+      seen.add(key);
+    }
+    return -1;
+  })()`);
+  check("setl: no dead meters across all 32 vertices of B_5", deadMeters === -1,
+    `first colliding A=${deadMeters}`);
+  check("setl: ledger has 12 rows + walk rows when walking",
+    boot.evalJs("setl.metrics().length") >= 12,
+    `rows=${boot.evalJs("setl.metrics().length")}`);
+
+  // view mode: Hasse at n≤5, ranked bars at n≥6
+  boot.evalJs("setl.n = 5; setl.init();");
+  check("setl: Hasse view at n=5", boot.evalJs("setl.viewMode()") === "hasse");
+  boot.evalJs("setl.n = 6; setl.init();");
+  check("setl: ranked-bar view at n=6", boot.evalJs("setl.viewMode()") === "bars");
+  boot.evalJs("setl.n = 8; setl.init();");
+  check("setl: ranked-bar view at n=8", boot.evalJs("setl.viewMode()") === "bars");
+
+  // WALK = Ehrenfest urn: rank converges to the binomial CLT,
+  // E = n/2, Var = n/4 (Ehrenfest & Ehrenfest 1907). Seeded: same numbers every run.
+  boot.evalJs("setl.n = 5; setl.K = 3; setl.init(); setl.walking = true; setl.rate = 60;");
+  boot.pump(700);
+  const walk = boot.evalJs("({ m: setl.walkRank.length, mu: setl.walkRank.reduce((a,x)=>a+x,0)/setl.walkRank.length, steps: setl.steps, hasWalkRows: setl.metrics().some(r => r[0].indexOf('WALK μ') === 0) })");
+  const va = boot.evalJs("setl.walkRank.reduce((a,x)=>a+(x-setl.walkRank.reduce((b,y)=>b+y,0)/setl.walkRank.length)**2,0)/setl.walkRank.length");
+  check("setl: walk samples ≈ swaps", walk.m >= 650 && walk.m <= 760, `samples=${walk.m}`);
+  check("setl: Ehrenfest mean (live vs n/2=2.5)", Math.abs(walk.mu - 2.5) < 0.25, `μ=${walk.mu.toFixed(3)}`);
+  check("setl: Ehrenfest variance (live vs n/4=1.25)", Math.abs(va - 1.25) < 0.45, `σ²=${va.toFixed(3)}`);
+  check("setl: walk rows appear in ledger once ≥20 samples", walk.hasWalkRows);
+  record("setl.walk", { samples: walk.m, mu: +walk.mu.toFixed(3), var: +va.toFixed(3), theoryMean: 2.5, theoryVar: 1.25 });
+  boot.evalJs("setl.walking = false;");
+
+  // stationary rank occupancy ∝ C(n,r)/2^n (n=4, long sample)
+  boot.evalJs("setl.n = 4; setl.init(); setl.walking = true; setl.rate = 60;");
+  boot.pump(1600);
+  const occ = boot.evalJs(`(() => {
+    const cnt = [0, 0, 0, 0, 0];
+    for (const x of setl.walkRank) cnt[x]++;
+    return cnt.map(c => c / setl.walkRank.length);
+  })()`);
+  const theo = [1, 4, 6, 4, 1].map(c => c / 16);
+  let occOK = true;
+  for (let i = 0; i <= 4; i++) if (Math.abs(occ[i] - theo[i]) > 0.07) occOK = false;
+  check("setl: stationary occupancy ≈ binomial(n, 1/2)", occOK,
+    `live ${occ.map(x => x.toFixed(3)).join(",")} vs theory ${theo.map(x => x.toFixed(3)).join(",")}`);
+  record("setl.occupancy", occ.map(x => +x.toFixed(3)));
+  boot.evalJs("setl.walking = false; setl.n = 5; setl.init();");
+  boot.setMode("twist");
+}
+
 /* ============================ run ============================ */
 const timed = (label, fn) => {
   const t0 = Date.now();
@@ -313,6 +486,7 @@ try {
   timed("chirp", () => testChirp(boot));
   timed("quilt", () => testQuilt(boot));
   timed("perm", () => testPerm(boot));
+  timed("setl", () => testSetl(boot));
 } catch (e) {
   fail++;
   failures.push("HARNESS EXCEPTION: " + e.stack);
