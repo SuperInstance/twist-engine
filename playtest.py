@@ -35,11 +35,10 @@ async def main():
 
     try:
         async with async_playwright() as p:
-            # Use the full chromium binary (headless mode is built in)
-            chrome_path = "/workspace/.home/.cache/ms-playwright/chromium-1243/chrome-linux64/chrome"
+            # Let Playwright locate the chromium binary it just installed
+            # (its cache path varies by environment/HOME; don't hardcode it).
             browser = await p.chromium.launch(
                 headless=True,
-                executable_path=chrome_path,
                 args=["--no-sandbox", "--disable-dev-shm-usage"],
             )
             ctx = await browser.new_context(viewport={"width": 1280, "height": 800})
