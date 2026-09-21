@@ -1,6 +1,6 @@
 # SUPERINSTANCE — a twist engine
 
-**Five substrates, one law: layers + deliberate offset → interference → emergence.**
+**Six substrates, one law: layers + deliberate offset → interference → emergence.**
 
 No new atoms — *a new angle*. The property is in the twist. This is an interactive
 canvas toy that demonstrates the law in five substrates, each with a live
@@ -20,6 +20,8 @@ Open `index.html` in a browser. That is the whole install.
 │          → the ledger counts holes: b1 = E − V + C  │
 │  PERM    n wires, a twist is a cycle                │
 │          → the twist law in S_n, inversions live    │
+│  SETL    subsets of an n-set, twist = A ↦ A △ K     │
+│          → the twist law in B_n, registry S live    │
 └─────────────────────────────────────────────────────┘
 ```
 
@@ -108,7 +110,55 @@ CLT, measured against the amber theory line on the chart, live.
   (1988) — random walks on S_n as the ur-model for shuffling; the Mahonian
   distribution of inversions converges to a Gaussian as n grows.*
 
-## Why these four together
+## SETL — the same twist, in the Boolean lattice
+
+The substrate is **B_n**: all subsets of an n-set under inclusion — 2^n
+vertices, the cover graph is the n-dimensional hypercube. *n* is tunable
+4–8 for viewability. The state is **one vertex** A ⊆ [n], exactly as PERM's
+state is one arrangement.
+
+Fix the **offset subset K ⊆ [n]**. The twist is one global operation, applied
+to every vertex at once — no new atoms, a new relation:
+
+> **τ_K : A ↦ A △ K** (symmetric difference with the fixed subset K)
+
+- **K = {i}** is a single-bit flip — a cover relation of B_n, a generator of
+the cube's edges (PERM's Coxeter σ_i, ported to subsets).
+- **K = [n]** is complementation: a fixed-point-free involution and order
+  anti-automorphism, rank r ↦ n−r.
+
+The commensuration meter is TWIST's, honest the same way:
+
+> **registry R = |A ∩ K| / |K|** — the fraction of the offset already present —
+> **ledger S = 1 − R**, and the emergent quantity is the rank displacement
+> **|A △ K| − |A| = |K| − 2|A ∩ K| = |K|·(2S − 1)**.
+
+Commensuration = A absorbs K entirely (S = 0); incommensurate = disjoint
+(S = 1). The displacement the twist induces is a linear readout of the same
+meter — interference measured, not asserted.
+
+The ledger (one definition, no dead meters): rank **|A|**; per-rank subset
+counts **C(n, r)** with the **Sperner antichain** — the widest rank
+C(n, ⌊n/2⌋), Sperner 1928 — rendered distinctly as the magic-window analog;
+complement pairs **2^(n−1)** (derived: a fixed-point-free involution on 2^n
+vertices); the **Dedekind number trace** M(n) for the current *n*, cited from
+table only (2, 3, 6, 20, 168, 7581, 7828352, 2414682040998,
+56130437228687557907788 for n = 0…8 — OEIS A000372; M(8) after Wiedemann
+1991) and never computed past what the view handles. Turn on **WALK** and
+random single-bit flips drive the rank as the **Ehrenfest urn** (Ehrenfest &
+Ehrenfest 1907): the classic convergence to the binomial, mean **n/2**,
+variance **n/4**, drawn live against the amber theory lines, stationary
+occupancy C(n,r)/2^n. The view is the **Hasse diagram** at n ≤ 5 (current
+vertex and its twist image highlighted, middle rank banded) and a
+**ranked-bar** fallback at n ≥ 6.
+
+- *References: Sperner, "Ein Satz über Untermengen einer endlichen Menge"
+  (1928); Dedekind (1897) / OEIS A000372; Ehrenfest & Ehrenfest,
+  Physikalische Zeitschrift 8:311–314 (1907). The companion note
+  `SHIPPED-THE-FIFTH-SUBSTRATE.md` records the witnessed fifth instance of
+  this law — Scrapcraft — where the offset is a child's tile program.*
+
+## Why these six together
 
 Each substrate is the same theorem wearing different clothes:
 
@@ -119,6 +169,7 @@ Each substrate is the same theorem wearing different clothes:
 | CHIRP | identical emitters | phase twist in time | the beam | contacts |
 | QUILT | identical oscillators | tempo twist in time | fabric topology | b1 |
 | PERM | n wires | a twist is a cycle | arrangement statistics | \|π\|, cycles, LIS, parity |
+| SETL | subsets of an n-set | a fixed subset K | rank displacement | S = 1 − \|A∩K\|/\|K\|, Sperner, Dedekind |
 
 The fleet's thesis, stated elsewhere as *the cell is the universal substrate*,
 here in its pure physics form: **interference is the cheapest computation there
@@ -132,15 +183,15 @@ Static files, no build, no dependencies:
 python3 -m http.server 8000   # or just open index.html
 ```
 
-Deep-link a mode with `?mode=twist|flock|chirp|quilt|perm`.
+Deep-link a mode with `?mode=twist|flock|chirp|quilt|perm|setl`.
 
 ## Files
 
 - `index.html` — shell: canvas, masthead tabs, the rail (ledger), footer controls
-- `app.js` — the five substrates + mode manager (~950 lines, dependency-free)
+- `app.js` — the six substrates + mode manager (~1250 lines, dependency-free)
 - `styles.css` — the dark-sea palette (ink `#0a1a24`, phosphor `#46e0c0`, amber `#f7a026`)
-- `tests/` — `dom-stub.js` + `sim.test.js`: 87 deterministic checks (mulberry32-seeded)
-  across all five modes; `npm test` / `node tests/sim.test.js`, `--explore` prints observed values
+- `tests/` — `dom-stub.js` + `sim.test.js`: 130 deterministic checks (mulberry32-seeded)
+  across all six modes; `npm test` / `node tests/sim.test.js`, `--explore` prints observed values
 - `playtest.py` — headless-Chromium pass over every tab (metrics, sliders, screenshots)
 - `.github/workflows/ci.yml` — node sim suite + Playwright playtest on every push
 

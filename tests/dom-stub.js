@@ -52,7 +52,7 @@ function _makeEl(id) {
 }
 const _elements = {};
 const _tabs = [];
-for (const _m of ["twist", "flock", "chirp", "quilt"]) {
+for (const _m of ["twist", "flock", "chirp", "quilt", "perm", "setl"]) {
   const _b = _makeEl("tab-" + _m); _b.dataset.mode = _m; _tabs.push(_b);
 }
 const document = {
@@ -82,12 +82,12 @@ function resizeWindow(w, h) {
   window.innerWidth = w; window.innerHeight = h;
   resize();
 }
-module.exports = {
+  module.exports = {
   pump,
   setMode: (m) => setMode(m),
   resizeWindow,
   evalJs: (expr) => eval(expr),
-  twist, flock, chirp, quilt, MODES, FICTIONS,
+  twist, flock, chirp, quilt, perm, setl, MODES, FICTIONS, popcount, binom, DEDEKIND,
 };
 `;
   const file = `/tmp/_twist_harness_${seed}.js`;

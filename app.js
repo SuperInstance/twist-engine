@@ -1,9 +1,11 @@
 /* SUPERINSTANCE — a twist engine.
-   Four substrates, one law: layers + deliberate offset -> interference -> emergence.
+   Six substrates, one law: layers + deliberate offset -> interference -> emergence.
    TWIST  two hex lattices, one rotation -> moire superlattice (measured, not asserted)
    FLOCK  the same birds under four collective nouns
    CHIRP  a phased array of twelve transducers: beam steering as a twist in time
-   QUILT  a tempo-twisted cell grid; the ledger counts holes, b1 = E - V + C   */
+   QUILT  a tempo-twisted cell grid; the ledger counts holes, b1 = E - V + C
+   PERM   the twist law in S_n: a twist is a cycle, inversions live
+   SETL   the twist law in B_n: the twist is A ↦ A △ K, registry S = 1 − |A∩K|/|K|   */
 "use strict";
 
 const TAU = Math.PI * 2;
@@ -997,9 +999,353 @@ const perm = {
 };
 
 /* ============================================================
+   SETL — the twist law in B_n (the Boolean lattice)
+   substrate: all subsets of an n-set under inclusion, 2^n vertices,
+   cover graph = the n-cube. n tunable 4..8 for viewability.
+   twist law: fix the offset subset K ⊆ [n]; the twist is ONE global
+   operation on every vertex — no new atoms, a new relation:
+       τ_K : A ↦ A △ K        (symmetric difference with K)
+   · K={i} is a single-bit flip = a cover relation of B_n — a generator
+     of the cube's edges (PERM's Coxeter σ_i, ported to subsets).
+   · K=[n] is complementation: a fixed-point-free involution and order
+     anti-automorphism, rank r ↦ n−r.
+   commensuration analog, measured like TWIST instead of asserted:
+       registry R(A) = |A ∩ K| / |K|   (fraction of the offset present in A)
+       ledger   S(A) = 1 − R(A)         — the same misalignment meter as TWIST
+   emergent quantity = the rank displacement the twist induces:
+       |A △ K| − |A| = |K| − 2|A ∩ K| = |K|·(2S(A) − 1)
+   — a linear readout of the same meter. Interference: one offset, every
+   vertex thrown to a new rank. Emergence: the measured displacement.
+   ledger (live, one definition, no dead meters): rank |A|; per-rank counts
+   C(n,r); Sperner antichain = widest rank C(n,⌊n/2⌋) rendered distinctly
+   (Sperner 1928); registry R, S; displacement; complement pairs 2^(n−1)
+   (derived: fixed-point-free involution on 2^n vertices); Dedekind trace
+   M(n) cited from table only — OEIS A000372 (Dedekind 1897; M(8):
+   Wiedemann 1991) — never computed above what the view handles.
+   WALK: random single-bit flips = the Ehrenfest urn (Ehrenfest & Ehrenfest
+   1907, Physikalische Zeitschrift 8:311–314). Rank then converges to the
+   binomial CLT: mean → n/2, variance → n/4 — measured live, drawn against
+   the amber theory lines. (Binomial identities: standard; e.g. Pascal.)
+   ============================================================ */
+function popcount(x) {
+  x = x - ((x >> 1) & 0x55555555);             // SWAR popcount, 32-bit
+  x = (x & 0x33333333) + ((x >> 2) & 0x33333333);
+  x = (x + (x >> 4)) & 0x0f0f0f0f;
+  return (x * 0x01010101) >> 24;
+}
+function binom(n, r) { // exact integers; n ≤ 8 here, far from overflow
+  if (r < 0 || r > n) return 0;
+  r = Math.min(r, n - r);
+  let out = 1;
+  for (let i = 1; i <= r; i++) out = out * (n - r + i) / i; // exact: divisible each step (Pascal)
+  return out;
+}
+// Dedekind numbers M(n) = # monotone Boolean functions on n vars = # antichains
+// in B_n = # elements of the free distributive lattice on n generators.
+// CITED TABLE ONLY — never computed past the view (M(9) is unknown).
+// Values n=0..8: OEIS A000372; M(8) after Wiedemann 1991 ("A computation of
+// the eighth Dedekind number", Order 8:5–6). n=8 exceeds 2^53 → string.
+const DEDEKIND = { 0: "2", 1: "3", 2: "6", 3: "20", 4: "168", 5: "7581",
+  6: "7828352", 7: "2414682040998", 8: "56130437228687557907788" };
+
+const setl = {
+  n: 5, A: 0, K: 0b00011, // state: ONE vertex A ⊆ [n], plus the fixed offset K
+  walking: false, rate: 10, acc: 0, railAcc: 0, steps: 0,
+  hist: [], walkRank: [], trail: [], flash: null,
+  doctrine: "no new atoms — <em>a new subset K</em>. the property is in the twist: A ↦ A △ K.",
+  title: "SETL", sub: "the twist law in B_n — misalignment of a subset against a fixed offset",
+
+  resize() { /* layout is derived per-frame from W/H; nothing stale to rebuild */ },
+  init() { // RESET: ∅ against the fixed offset — full misalignment, maximal displacement
+    const mask = (1 << this.n) - 1;
+    this.A = 0; this.K &= mask;
+    this.hist = []; this.walkRank = []; this.trail = [];
+    this.acc = 0; this.railAcc = 0; this.steps = 0; this.flash = null;
+    this.recompute();
+  },
+
+  // ---- lattice arithmetic (all exact, all cited in the header comment) ----
+  recompute() {
+    const n = this.n, A = this.A, K = this.K;
+    const rank = popcount(A);            // |A| — position on any maximal chain
+    const k = popcount(K);               // |K|
+    const inter = popcount(A & K);       // |A ∩ K|
+    const R = k ? inter / k : 1;         // registry — fraction of the offset present
+    const twistRank = popcount(A ^ K);   // |A △ K|
+    const mid = n >> 1;                  // floor(n/2)
+    this.rank = rank; this.k = k; this.inter = inter;
+    this.R = R; this.S = 1 - R;          // ledger S = 1 − registry, TWIST's definition
+    this.displacement = twistRank - rank;        // = k − 2·|A∩K| = k·(2S − 1)
+    this.twistRank = twistRank;
+    this.sperner = binom(n, mid);        // Sperner 1928: width of B_n = C(n,⌊n/2⌋)
+    this.atMiddle = this.rankCount === this.sperner; // current rank IS a widest rank (odd n: two of them)
+    this.rankCount = binom(n, rank);     // how many subsets share the current rank
+    this.complementPairs = Math.pow(2, n - 1); // fixed-point-free involution A↦Aᶜ on 2^n verts
+    this.dedekind = DEDEKIND[n];
+    this.maxChain = n + 1;               // longest chain ∅⊂…⊂[n] has n covers, n+1 vertices
+  },
+  flip(i) { // cover relation: toggle element i — a generator of the n-cube's edges
+    if (i < 0 || i >= this.n) return;
+    this.A ^= (1 << i);
+    this.steps++; this.flash = { i, life: 1 };
+    this.trail.push(this.A); if (this.trail.length > 48) this.trail.shift();
+  },
+  applyTwist() { // τ_K: the twist law itself, applied to the current vertex
+    this.A ^= this.K;
+    this.steps++; this.flash = { i: -1, life: 1 };
+    this.trail.push(this.A); if (this.trail.length > 48) this.trail.shift();
+  },
+  complement() { // τ_[n]: the full twist = complementation, rank ↦ n − rank
+    this.A ^= (1 << this.n) - 1;
+    this.steps++; this.flash = { i: -2, life: 1 };
+    this.trail.push(this.A); if (this.trail.length > 48) this.trail.shift();
+  },
+
+  controls() {
+    ctrlEl.appendChild(makeSlider("SET SIZE N", 4, 8, 1,
+      () => this.n, v => { this.n = v; this.K &= (1 << v) - 1; this.A &= (1 << v) - 1; this.init(); ctrlEl.innerHTML = ""; this.controls(); },
+      v => String(v)));
+    // the offset K, edited bit by bit — the deliberate misalignment, made visible
+    const kWrap = document.createElement("div"); kWrap.className = "ctrl";
+    const kLab = document.createElement("label");
+    const kName = document.createElement("span"); kName.textContent = "OFFSET SUBSET K";
+    const kVal = document.createElement("b");
+    kLab.append(kName, kVal);
+    const kRow = document.createElement("div"); kRow.className = "btnrow";
+    const kBits = [];
+    const showK = () => {
+      kVal.textContent = this.K.toString(2).padStart(this.n, "0") + "  (|K|=" + popcount(this.K) + ")";
+      kBits.forEach((b, i) => b.classList.toggle("active", !!(this.K & (1 << i))));
+    };
+    for (let i = 0; i < this.n; i++) {
+      const b = document.createElement("button");
+      b.className = "fbtn"; b.textContent = "k" + i;
+      b.addEventListener("click", () => { this.K ^= (1 << i); showK(); });
+      kRow.appendChild(b); kBits.push(b);
+    }
+    showK();
+    kWrap.append(kLab, kRow);
+    ctrlEl.appendChild(kWrap);
+    ctrlEl.appendChild(makeButtons(
+      [["twist", "TWIST K (A△K)"], ["comp", "COMPLEMENT"], ["reset", "RESET"]],
+      () => "",
+      v => {
+        if (v === "twist") this.applyTwist();
+        else if (v === "comp") this.complement();
+        else this.init();
+      }));
+    ctrlEl.appendChild(makeButtons(
+      [[true, "WALK: ON"], [false, "WALK: OFF"]],
+      () => this.walking,
+      v => { this.walking = v; }));
+    ctrlEl.appendChild(makeSlider("WALK RATE /S", 1, 60, 1,
+      () => this.rate, v => { this.rate = v; },
+      v => String(v)));
+  },
+
+  viewMode() { return this.n <= 5 ? "hasse" : "bars"; },
+
+  frame(dt, t) {
+    if (this.walking) {
+      this.acc += dt * this.rate;
+      while (this.acc >= 1) {
+        this.acc -= 1;
+        this.flip(Math.floor(Math.random() * this.n)); // Ehrenfest: pick a flea, move it
+        this.recompute();
+        this.walkRank.push(this.rank);
+        if (this.walkRank.length > 2000) this.walkRank.shift();
+      }
+    }
+    this.recompute();
+    this.railAcc += dt;
+    if (this.railAcc > 0.12) { this.railAcc = 0; this.hist.push(this.rank); if (this.hist.length > 220) this.hist.shift(); }
+
+    ctx.fillStyle = "#0a1a24"; ctx.fillRect(0, 0, W, H);
+    if (this.viewMode() === "hasse") this.drawHasse(dt);
+    else this.drawBars(dt);
+  },
+
+  nodeXY(mask, layout) { // ranked embedding: y by rank, x spread within the rank row
+    const r = popcount(mask);
+    const row = layout.rows[r];
+    const idx = row.index.get(mask);
+    const x = row.x0 + (idx + 1) * row.dx;
+    const y = row.y;
+    return [x, y];
+  },
+  buildLayout() {
+    const n = this.n, top = H * 0.10, bot = H * 0.80;
+    const rows = [];
+    for (let r = 0; r <= n; r++) {
+      const count = binom(n, r);
+      const y = n === 0 ? (top + bot) / 2 : lerp(top, bot, r / n);
+      const margin = Math.max(60, W * 0.08);
+      rows.push({ y, count, index: new Map(),
+        x0: margin, dx: (W - 2 * margin) / (count + 1) });
+    }
+    for (let m = 0; m < (1 << n); m++) rows[popcount(m)].index.set(m, rows[popcount(m)].index.size);
+    return { rows };
+  },
+  drawHasse(dt) {
+    const n = this.n;
+    const layout = this.buildLayout();
+    const mid = n >> 1;
+    // the Sperner antichain: widest rank banded distinctly — the magic-window analog
+    ctx.fillStyle = "rgba(247,160,38,.07)";
+    ctx.fillRect(0, layout.rows[mid].y - 26, W, 52);
+    ctx.fillStyle = "rgba(247,160,38,.55)"; ctx.font = "8px ui-monospace, monospace";
+    ctx.fillText("SPERNER ANTICHAIN — WIDEST RANK C(n,⌊n/2⌋)=" + this.sperner, 8, layout.rows[mid].y - 30);
+
+    // cover edges (differ by one bit) — the cube, ranked
+    ctx.strokeStyle = "rgba(70,224,192,.16)"; ctx.lineWidth = 1;
+    for (let m = 0; m < (1 << n); m++) {
+      for (let i = 0; i < n; i++) {
+        if (m & (1 << i)) continue;
+        const u = this.nodeXY(m, layout), v = this.nodeXY(m | (1 << i), layout);
+        ctx.beginPath(); ctx.moveTo(u[0], u[1]); ctx.lineTo(v[0], v[1]); ctx.stroke();
+      }
+    }
+    // walk trail: recent path through the lattice
+    if (this.trail.length > 1) {
+      ctx.strokeStyle = "rgba(247,160,38,.28)"; ctx.lineWidth = 1;
+      ctx.beginPath();
+      for (let i = 0; i < this.trail.length; i++) {
+        const p = this.nodeXY(this.trail[i], layout);
+        i ? ctx.lineTo(p[0], p[1]) : ctx.moveTo(p[0], p[1]);
+      }
+      ctx.stroke();
+    }
+    // vertices
+    const dot = n <= 4 ? 9 : 7;
+    ctx.font = "7px ui-monospace, monospace";
+    for (let m = 0; m < (1 << n); m++) {
+      const [x, y] = this.nodeXY(m, layout);
+      const r = popcount(m);
+      const onMid = r === mid;
+      ctx.fillStyle = onMid ? "rgba(247,160,38,.50)" : "rgba(70,224,192,.42)";
+      ctx.fillRect(x - dot / 2, y - dot / 2, dot, dot);
+      ctx.fillStyle = "rgba(237,228,211,.40)";
+      ctx.fillText(m.toString(2).padStart(n, "0"), x - n * 2.1, y + dot / 2 + 8);
+    }
+    // the twist pair, rendered distinctly: current vertex + its τ_K image
+    const pA = this.nodeXY(this.A, layout);
+    const pT = this.nodeXY(this.A ^ this.K, layout);
+    ctx.strokeStyle = "rgba(247,160,38,.85)"; ctx.lineWidth = 1.4;
+    ctx.beginPath(); ctx.arc(pA[0], pA[1], 10, 0, TAU); ctx.stroke();
+    ctx.fillStyle = "#f7a026";
+    ctx.beginPath(); ctx.arc(pA[0], pA[1], 4, 0, TAU); ctx.fill();
+    ctx.strokeStyle = "rgba(70,224,192,.85)";
+    ctx.beginPath(); ctx.arc(pT[0], pT[1], 8, 0, TAU); ctx.stroke();
+    ctx.fillStyle = "#46e0c0";
+    ctx.fillRect(pT[0] - 3, pT[1] - 3, 6, 6);
+    ctx.fillStyle = "rgba(237,228,211,.75)"; ctx.font = "8px ui-monospace, monospace";
+    ctx.fillText("A=" + this.A.toString(2).padStart(n, "0"), pA[0] + 13, pA[1] - 8);
+    ctx.fillText("A△K=" + (this.A ^ this.K).toString(2).padStart(n, "0"), pT[0] + 11, pT[1] + 14);
+    ctx.fillStyle = "#73909c";
+    ctx.fillText("LEDGER S = 1 − |A∩K|/|K| = " + this.S.toFixed(3), 8, H * 0.94);
+    ctx.fillText("DISPLACEMENT |A△K|−|A| = " + (this.displacement >= 0 ? "+" : "") + this.displacement, 8, H * 0.94 + 12);
+
+    if (this.flash) {
+      this.flash.life -= dt * 2.2;
+      if (this.flash.life <= 0) this.flash = null;
+      else {
+        ctx.strokeStyle = `rgba(247,160,38,${this.flash.life * 0.9})`;
+        ctx.lineWidth = 1;
+        ctx.beginPath(); ctx.arc(pA[0], pA[1], 8 + (1 - this.flash.life) * 26, 0, TAU); ctx.stroke();
+      }
+    }
+  },
+  drawBars(dt) {
+    const n = this.n;
+    const vals = [];
+    for (let r = 0; r <= n; r++) vals.push(binom(n, r));
+    const max = vals[this.n >> 1];
+    const base = H * 0.82, top = H * 0.14;
+    const bw = Math.min(60, (W * 0.7) / (n + 1));
+    const ox = (W - bw * (n + 1)) / 2;
+    const mid = n >> 1;
+    ctx.font = "8px ui-monospace, monospace";
+    for (let r = 0; r <= n; r++) {
+      const h = lerp(6, H * 0.62, vals[r] / max);
+      const x = ox + r * bw, y = base - h;
+      const isCur = r === this.rank, isTw = r === this.twistRank, isMid = r === mid;
+      ctx.fillStyle = isMid ? "rgba(247,160,38,.40)" : "rgba(70,224,192,.30)";
+      if (isCur) ctx.fillStyle = "rgba(247,160,38,.85)";
+      ctx.fillRect(x + 3, y, bw - 6, h);
+      if (isTw) {
+        ctx.strokeStyle = "rgba(70,224,192,.9)"; ctx.lineWidth = 1.4;
+        ctx.strokeRect(x + 3, y, bw - 6, h);
+      }
+      ctx.fillStyle = "rgba(237,228,211,.65)";
+      ctx.fillText("C(" + n + "," + r + ")=" + vals[r], x, base + 12);
+      ctx.fillStyle = isMid ? "#f7a026" : "#73909c";
+      ctx.fillText("r=" + r, x, y - 4);
+    }
+    // the current vertex and its twist image as ranked markers
+    const mark = (r, color) => {
+      const x = ox + r * bw + bw / 2;
+      ctx.strokeStyle = color; ctx.lineWidth = 1.4;
+      ctx.beginPath(); ctx.moveTo(x - 10, base + 22); ctx.lineTo(x + 10, base + 22); ctx.stroke();
+    };
+    mark(this.rank, "#f7a026"); mark(this.twistRank, "#46e0c0");
+    ctx.fillStyle = "rgba(237,228,211,.75)";
+    ctx.fillText("A: rank " + this.rank + (this.rank === this.twistRank ? "  (A = A△K — K absorbed)" : ""), ox, base + 36);
+    ctx.fillStyle = "#73909c";
+    ctx.fillText("SPERNER WIDTH C(n,⌊n/2⌋)=" + this.sperner + "  ·  n≥6: ranked bars (" + (1 << n) + " vertices too dense for Hasse)", ox, H * 0.08);
+  },
+
+  chart() {
+    const w = chartCv.clientWidth, h = 72;
+    chartAxes("RANK |A| — EHRENFEST CONVERGENCE");
+    if (this.hist.length >= 2) {
+      chartCtx.beginPath();
+      for (let i = 0; i < this.hist.length; i++) {
+        const x = i / 219 * w, y = h - 6 - this.hist[i] / this.n * (h - 18);
+        i ? chartCtx.lineTo(x, y) : chartCtx.moveTo(x, y);
+      }
+      chartCtx.strokeStyle = "rgba(70,224,192,.85)"; chartCtx.lineWidth = 1.2; chartCtx.stroke();
+    }
+    // theory: E[rank] = n/2 (Ehrenfest & Ehrenfest 1907); Var = n/4 → σ = √n/2
+    const ey = h - 6 - (this.n / 2) / this.n * (h - 18);
+    chartCtx.strokeStyle = "rgba(247,160,38,.55)"; chartCtx.setLineDash([3, 4]);
+    chartCtx.beginPath(); chartCtx.moveTo(0, ey); chartCtx.lineTo(w, ey); chartCtx.stroke();
+    const sd = Math.sqrt(this.n) / 2 / this.n * (h - 18);
+    chartCtx.strokeStyle = "rgba(247,160,38,.22)";
+    chartCtx.beginPath(); chartCtx.moveTo(0, ey - sd); chartCtx.lineTo(w, ey - sd); chartCtx.stroke();
+    chartCtx.beginPath(); chartCtx.moveTo(0, ey + sd); chartCtx.lineTo(w, ey + sd); chartCtx.stroke();
+    chartCtx.setLineDash([]);
+  },
+
+  metrics() {
+    const rows = [
+      ["N — SET SIZE", String(this.n), ""],
+      ["A (bitstring)", this.A.toString(2).padStart(this.n, "0"), "hot"],
+      ["RANK |A|", String(this.rank), "sig"],
+      ["K / |K|", this.K.toString(2).padStart(this.n, "0") + " / " + this.k, ""],
+      ["REGISTRY R = |A∩K|/|K|", this.R.toFixed(3), ""],
+      ["LEDGER S = 1−R", this.S.toFixed(3), "sig"],
+      ["|A△K| − |A| = |K|(2S−1)", (this.displacement >= 0 ? "+" : "") + this.displacement, ""],
+      ["RANK COUNT C(n,|A|)", String(this.rankCount), ""],
+      ["SPERNER WIDTH C(n,⌊n/2⌋)", String(this.sperner), this.atMiddle ? "hot" : ""],
+      ["COMPLEMENT PAIRS 2^(n−1)", String(this.complementPairs), ""],
+      ["LONGEST CHAIN (verts)", String(this.maxChain), ""],
+      ["DEDEKIND M(n)", this.dedekind, ""]
+    ];
+    if (this.walkRank.length >= 20) {
+      const m = this.walkRank.length;
+      const mu = this.walkRank.reduce((a, x) => a + x, 0) / m;
+      const va = this.walkRank.reduce((a, x) => a + (x - mu) * (x - mu), 0) / m;
+      rows.push(["WALK μ (live / theory n/2)", mu.toFixed(2) + " / " + (this.n / 2).toFixed(2), ""]);
+      rows.push(["WALK σ² (live / theory n/4)", va.toFixed(2) + " / " + (this.n / 4).toFixed(2), ""]);
+    }
+    return rows;
+  }
+};
+
+/* ============================================================
    mode manager + boot
    ============================================================ */
-const MODES = { twist, flock, chirp, quilt, perm };
+const MODES = { twist, flock, chirp, quilt, perm, setl };
 const state = { mode: "twist", t: 0 };
 
 function setMode(name) {
